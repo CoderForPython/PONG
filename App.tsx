@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Menu from './components/Menu';
 import Game from './components/Game';
 import Lobby from './components/Lobby';
@@ -27,77 +27,84 @@ const App: React.FC = () => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const cleanup = useCallback(() => {
-    if (conn) conn.close();
-    if (peer) peer.destroy();
-    setConn(null);
-    setPeer(null);
-    setLobbyId('');
-    setError(null);
-  }, [conn, peer]);
-
   const setupConnection = useCallback((connection: any, hostStatus: boolean) => {
-    connection.on('open', () => {
+    const onOpen = () => {
+      console.log("Connection established!");
       setConn(connection);
       if (hostStatus) {
         setGameState('SELECTING_SIDE');
       }
-    });
+    };
+
+    if (connection.open) {
+      onOpen();
+    } else {
+      connection.on('open', onOpen);
+    }
 
     connection.on('data', (data: any) => {
+      console.log("Data received:", data.type);
       if (data.type === 'SIDE_SELECTED') {
         setHostSide(data.side);
-        // If I am not host, my side is the opposite
         setGameState('COUNTDOWN');
       }
     });
 
     connection.on('close', () => {
-      alert("Connection lost");
-      window.location.reload();
+      setError("Соединение разорвано");
+      setTimeout(() => window.location.reload(), 2000);
     });
 
     connection.on('error', (err: any) => {
-      setError("Connection error occurred.");
-      console.error(err);
+      console.error("Conn Error:", err);
+      setError("Ошибка передачи данных");
     });
   }, []);
 
   const createLobby = useCallback(() => {
-    const shortId = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const newPeer = new Peer(shortId);
+    // Используем 5 символов для уменьшения вероятности коллизии
+    const id = Math.random().toString(36).substring(2, 7).toUpperCase();
+    const newPeer = new Peer(id);
 
     newPeer.on('open', (id: string) => {
+      console.log("Peer opened with ID:", id);
       setLobbyId(id);
       setIsHost(true);
       setPeer(newPeer);
     });
 
     newPeer.on('connection', (connection: any) => {
+      console.log("Incoming connection...");
       setupConnection(connection, true);
     });
 
     newPeer.on('error', (err: any) => {
+      console.error("Peer Error:", err);
       if (err.type === 'unavailable-id') {
-        // Retry with a different ID if taken
-        createLobby();
+        createLobby(); // Пробуем другой ID
       } else {
-        setError("Could not create lobby.");
+        setError("Не удалось создать лобби. Попробуйте обновить страницу.");
       }
     });
   }, [setupConnection]);
 
   const joinLobby = useCallback((id: string) => {
+    setError(null);
     const newPeer = new Peer();
+    
     newPeer.on('open', () => {
-      const connection = newPeer.connect(id.toUpperCase(), { reliable: true });
+      console.log("Guest peer opened, connecting to:", id);
+      const connection = newPeer.connect(id.trim().toUpperCase(), {
+        reliable: true
+      });
       setIsHost(false);
       setPeer(newPeer);
       setupConnection(connection, false);
     });
 
     newPeer.on('error', (err: any) => {
-      setError("Lobby not found or connection failed.");
+      console.error("Join Error:", err);
+      setError("Лобби не найдено или сервер недоступен");
     });
   }, [setupConnection]);
 
@@ -109,11 +116,17 @@ const App: React.FC = () => {
     setGameState('COUNTDOWN');
   };
 
+  const cleanup = () => {
+    if (conn) conn.close();
+    if (peer) peer.destroy();
+    window.location.reload();
+  };
+
   return (
     <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center overflow-hidden font-sans selection:bg-blue-500/30">
       {error && (
-        <div className="fixed top-4 bg-red-500/20 border border-red-500 text-red-200 px-4 py-2 rounded-lg z-50 backdrop-blur-md">
-          {error} <button onClick={() => setError(null)} className="ml-2 font-bold underline">Dismiss</button>
+        <div className="fixed top-6 bg-red-600/90 text-white px-6 py-3 rounded-full z-50 shadow-2xl backdrop-blur-md animate-bounce">
+          {error}
         </div>
       )}
 
@@ -130,11 +143,9 @@ const App: React.FC = () => {
       )}
 
       {gameState === 'SELECTING_SIDE' && !isHost && (
-        <div className="flex flex-col items-center space-y-6">
-          <div className="w-16 h-16 border-t-4 border-blue-500 border-solid rounded-full animate-spin"></div>
-          <div className="text-white text-2xl font-medium tracking-tight animate-pulse">
-            Host is choosing sides...
-          </div>
+        <div className="flex flex-col items-center space-y-8">
+          <div className="w-20 h-20 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-white text-3xl font-bold tracking-widest animate-pulse">ОЖИДАНИЕ ВЫБОРА СТОРОНЫ...</p>
         </div>
       )}
 
@@ -149,13 +160,13 @@ const App: React.FC = () => {
       )}
 
       {gameState === 'FINISHED' && (
-        <div className="flex flex-col items-center space-y-8 animate-in fade-in zoom-in duration-500">
-          <h1 className="text-7xl font-black text-white italic tracking-tighter">GAME OVER</h1>
+        <div className="flex flex-col items-center space-y-10">
+          <h1 className="text-8xl font-black text-white italic">GAME OVER</h1>
           <button 
             onClick={() => window.location.reload()}
-            className="px-12 py-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-2xl transition-all shadow-[0_0_30px_rgba(37,99,235,0.4)] transform hover:scale-105 active:scale-95"
+            className="px-16 py-6 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl transition-all shadow-2xl transform hover:scale-105"
           >
-            RETURN TO MENU
+            В МЕНЮ
           </button>
         </div>
       )}

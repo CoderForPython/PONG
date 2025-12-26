@@ -15,8 +15,8 @@ const CANVAS_HEIGHT = 500;
 const PADDLE_WIDTH = 12;
 const PADDLE_HEIGHT = 90;
 const BALL_SIZE = 10;
-const PADDLE_SPEED = 9;
-const INITIAL_BALL_SPEED = 6;
+const PADDLE_SPEED = 10;
+const INITIAL_BALL_SPEED = 7;
 
 const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -35,7 +35,7 @@ const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile 
     ball.current.y = CANVAS_HEIGHT / 2;
     const direction = Math.random() > 0.5 ? 1 : -1;
     ball.current.vx = direction * INITIAL_BALL_SPEED;
-    ball.current.vy = (Math.random() - 0.5) * 6;
+    ball.current.vy = (Math.random() - 0.5) * 8;
   }, []);
 
   useEffect(() => {
@@ -79,6 +79,7 @@ const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile 
     window.addEventListener('keyup', handleKeyUp);
 
     let animationFrame: number;
+    let lastSent = 0;
 
     const update = () => {
       if (countdown !== null) return;
@@ -100,20 +101,15 @@ const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile 
         }
 
         const checkCollision = (px: number, py: number, isLeft: boolean) => {
-          const paddleLeft = px;
-          const paddleRight = px + PADDLE_WIDTH;
-          const paddleTop = py;
-          const paddleBottom = py + PADDLE_HEIGHT;
-
           if (
-            ball.current.y + BALL_SIZE > paddleTop &&
-            ball.current.y < paddleBottom &&
-            ((isLeft && ball.current.x <= paddleRight && ball.current.x >= paddleLeft && ball.current.vx < 0) ||
-             (!isLeft && ball.current.x + BALL_SIZE >= paddleLeft && ball.current.x + BALL_SIZE <= paddleRight && ball.current.vx > 0))
+            ball.current.y + BALL_SIZE > py &&
+            ball.current.y < py + PADDLE_HEIGHT &&
+            ((isLeft && ball.current.x <= px + PADDLE_WIDTH && ball.current.x >= px && ball.current.vx < 0) ||
+             (!isLeft && ball.current.x + BALL_SIZE >= px && ball.current.x + BALL_SIZE <= px + PADDLE_WIDTH && ball.current.vx > 0))
           ) {
-            ball.current.vx *= -1.05;
+            ball.current.vx *= -1.08;
             const hitPos = (ball.current.y + BALL_SIZE / 2) - (py + PADDLE_HEIGHT / 2);
-            ball.current.vy += hitPos * 0.15;
+            ball.current.vy += hitPos * 0.2;
             return true;
           }
           return false;
@@ -122,14 +118,14 @@ const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile 
         checkCollision(20, p1Y.current, true);
         checkCollision(CANVAS_WIDTH - 20 - PADDLE_WIDTH, p2Y.current, false);
 
-        if (ball.current.x < -50) {
+        if (ball.current.x < -100) {
           setScore(prev => {
             const next = { ...prev, right: prev.right + 1 };
             if (next.right >= 10) onFinish();
             return next;
           });
           resetBall();
-        } else if (ball.current.x > CANVAS_WIDTH + 50) {
+        } else if (ball.current.x > CANVAS_WIDTH + 100) {
           setScore(prev => {
             const next = { ...prev, left: prev.left + 1 };
             if (next.left >= 10) onFinish();
@@ -138,18 +134,27 @@ const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile 
           resetBall();
         }
 
-        conn.send({
-          type: 'SYNC_STATE',
-          ball: ball.current,
-          hostPaddleY: hostSide === 'LEFT' ? p1Y.current : p2Y.current,
-          hostScore: score.left,
-          guestScore: score.right
-        });
+        // Ограничиваем частоту отправки до ~60fps
+        const now = Date.now();
+        if (now - lastSent > 16) {
+          conn.send({
+            type: 'SYNC_STATE',
+            ball: ball.current,
+            hostPaddleY: hostSide === 'LEFT' ? p1Y.current : p2Y.current,
+            hostScore: score.left,
+            guestScore: score.right
+          });
+          lastSent = now;
+        }
       } else {
-        conn.send({
-          type: 'INPUT_UPDATE',
-          guestPaddleY: hostSide === 'LEFT' ? p2Y.current : p1Y.current
-        });
+        const now = Date.now();
+        if (now - lastSent > 16) {
+          conn.send({
+            type: 'INPUT_UPDATE',
+            guestPaddleY: hostSide === 'LEFT' ? p2Y.current : p1Y.current
+          });
+          lastSent = now;
+        }
       }
     };
 
@@ -160,9 +165,8 @@ const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile 
       ctx.fillStyle = '#050505';
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-      // Center dash line
       ctx.setLineDash([10, 15]);
-      ctx.strokeStyle = '#1a1a1a';
+      ctx.strokeStyle = '#111';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(CANVAS_WIDTH / 2, 0);
@@ -173,7 +177,7 @@ const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile 
       const drawRect = (x: number, y: number, w: number, h: number, color: string, glow: boolean = false) => {
         ctx.fillStyle = color;
         if (glow) {
-          ctx.shadowBlur = 15;
+          ctx.shadowBlur = 20;
           ctx.shadowColor = color;
         }
         ctx.fillRect(x, y, w, h);
@@ -182,24 +186,19 @@ const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile 
 
       const myColor = '#3b82f6';
       const enemyColor = '#f43f5e';
-      const neutralColor = '#ffffff';
 
-      // Left Paddle
-      const p1Color = hostSide === 'LEFT' ? (isHost ? myColor : enemyColor) : (isHost ? enemyColor : myColor);
-      drawRect(20, p1Y.current, PADDLE_WIDTH, PADDLE_HEIGHT, p1Color, true);
+      const leftColor = hostSide === 'LEFT' ? (isHost ? myColor : enemyColor) : (isHost ? enemyColor : myColor);
+      drawRect(20, p1Y.current, PADDLE_WIDTH, PADDLE_HEIGHT, leftColor, true);
 
-      // Right Paddle
-      const p2Color = hostSide === 'RIGHT' ? (isHost ? myColor : enemyColor) : (isHost ? enemyColor : myColor);
-      drawRect(CANVAS_WIDTH - 20 - PADDLE_WIDTH, p2Y.current, PADDLE_WIDTH, PADDLE_HEIGHT, p2Color, true);
+      const rightColor = hostSide === 'RIGHT' ? (isHost ? myColor : enemyColor) : (isHost ? enemyColor : myColor);
+      drawRect(CANVAS_WIDTH - 20 - PADDLE_WIDTH, p2Y.current, PADDLE_WIDTH, PADDLE_HEIGHT, rightColor, true);
 
-      // Ball
-      drawRect(ball.current.x, ball.current.y, BALL_SIZE, BALL_SIZE, neutralColor, true);
+      drawRect(ball.current.x, ball.current.y, BALL_SIZE, BALL_SIZE, '#fff', true);
 
-      // Scores
-      ctx.font = 'bold 120px Inter, system-ui';
+      ctx.font = 'bold 150px Inter';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
       ctx.fillText(score.left.toString(), CANVAS_WIDTH / 4, CANVAS_HEIGHT / 2);
       ctx.fillText(score.right.toString(), (CANVAS_WIDTH * 3) / 4, CANVAS_HEIGHT / 2);
     };
@@ -215,45 +214,47 @@ const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile 
 
   if (isMobile && !isLandscape) {
     return (
-      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white p-8 z-50 text-center">
-        <div className="w-24 h-24 mb-6 border-4 border-dashed border-blue-500 rounded-2xl animate-[spin_4s_linear_infinite]"></div>
-        <h2 className="text-3xl font-black mb-4 tracking-tighter uppercase">Rotate Device</h2>
-        <p className="text-zinc-500 font-medium">Please turn your phone horizontally to start the match.</p>
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white p-12 z-50 text-center">
+        <div className="w-32 h-32 mb-10 border-8 border-dashed border-blue-500 rounded-3xl animate-[spin_5s_linear_infinite]"></div>
+        <h2 className="text-4xl font-black mb-4 uppercase tracking-tighter">Переверните устройство</h2>
+        <p className="text-zinc-500 text-xl">Для игры необходим ландшафтный режим.</p>
       </div>
     );
   }
 
   return (
-    <div className="relative w-full max-w-[1000px] aspect-[8/5] bg-zinc-900/50 rounded-3xl overflow-hidden border-8 border-zinc-800/50 shadow-[0_0_100px_rgba(0,0,0,0.8)]">
+    <div className="relative w-full max-w-[1000px] aspect-[8/5] bg-black rounded-[2rem] overflow-hidden border-[12px] border-zinc-900 shadow-2xl">
       <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="w-full h-full" />
 
       {countdown !== null && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md z-40">
-          <div className="text-[12rem] font-black text-white italic drop-shadow-[0_0_30px_rgba(255,255,255,0.5)] animate-pulse">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-40">
+          <div className="text-[15rem] font-black text-white italic animate-ping">
             {countdown}
           </div>
         </div>
       )}
 
       {isMobile && (
-        <div className="absolute inset-0 flex justify-between pointer-events-none p-4 select-none">
-          <div className="flex flex-col justify-end space-y-4 pointer-events-auto h-full w-1/4">
+        <div className="absolute inset-0 flex justify-between pointer-events-none p-6">
+          <div className="flex flex-col justify-end space-y-6 pointer-events-auto h-full">
              <button 
                 onTouchStart={(e) => { e.preventDefault(); mobileInput.current = -1; }}
                 onTouchEnd={() => mobileInput.current = 0}
-                className="w-24 h-24 bg-white/5 active:bg-blue-500/20 border border-white/10 rounded-full flex items-center justify-center text-3xl backdrop-blur-sm transition-colors"
+                className="w-28 h-28 bg-white/5 active:bg-blue-500/40 border-2 border-white/10 rounded-full flex items-center justify-center text-4xl backdrop-blur-md transition-all active:scale-90"
              >
                 ▲
              </button>
              <button 
                 onTouchStart={(e) => { e.preventDefault(); mobileInput.current = 1; }}
                 onTouchEnd={() => mobileInput.current = 0}
-                className="w-24 h-24 bg-white/5 active:bg-blue-500/20 border border-white/10 rounded-full flex items-center justify-center text-3xl backdrop-blur-sm transition-colors"
+                className="w-28 h-28 bg-white/5 active:bg-blue-500/40 border-2 border-white/10 rounded-full flex items-center justify-center text-4xl backdrop-blur-md transition-all active:scale-90"
              >
                 ▼
              </button>
           </div>
-          <div className="w-1/4 h-full" />
+          <div className="w-32 h-full opacity-10 pointer-events-none">
+             {/* Индикаторы или декор */}
+          </div>
         </div>
       )}
     </div>
