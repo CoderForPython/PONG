@@ -134,7 +134,6 @@ const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile 
           resetBall();
         }
 
-        // Ограничиваем частоту отправки до ~60fps
         const now = Date.now();
         if (now - lastSent > 16) {
           conn.send({
@@ -212,48 +211,43 @@ const Game: React.FC<GameProps> = ({ conn, isHost, hostSide, onFinish, isMobile 
     return () => cancelAnimationFrame(animationFrame);
   }, [isHost, hostSide, countdown, score, onFinish, conn, resetBall]);
 
-  if (isMobile && !isLandscape) {
-    return (
-      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white p-12 z-50 text-center">
-        <div className="w-32 h-32 mb-10 border-8 border-dashed border-blue-500 rounded-3xl animate-[spin_5s_linear_infinite]"></div>
-        <h2 className="text-4xl font-black mb-4 uppercase tracking-tighter">Переверните устройство</h2>
-        <p className="text-zinc-500 text-xl">Для игры необходим ландшафтный режим.</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="relative w-full max-w-[1000px] aspect-[8/5] bg-black rounded-[2rem] overflow-hidden border-[12px] border-zinc-900 shadow-2xl">
-      <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="w-full h-full" />
+    <div className={`flex flex-col items-center justify-center w-full h-full max-w-[1000px] ${isLandscape ? 'px-4' : 'px-2'}`}>
+      {/* Игровое поле */}
+      <div className="relative w-full aspect-[8/5] bg-black rounded-[1.5rem] md:rounded-[2rem] overflow-hidden border-[6px] md:border-[12px] border-zinc-900 shadow-2xl">
+        <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="w-full h-full" />
 
-      {countdown !== null && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-40">
-          <div className="text-[15rem] font-black text-white italic animate-ping">
-            {countdown}
+        {countdown !== null && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-40">
+            <div className="text-8xl md:text-[15rem] font-black text-white italic animate-ping">
+              {countdown}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
+      {/* Мобильное управление */}
       {isMobile && (
-        <div className="absolute inset-0 flex justify-between pointer-events-none p-6">
-          <div className="flex flex-col justify-end space-y-6 pointer-events-auto h-full">
+        <div className={`w-full flex ${isLandscape ? 'fixed inset-0 pointer-events-none' : 'mt-8 justify-center gap-12'}`}>
+          <div className={`${isLandscape ? 'absolute left-6 bottom-6 pointer-events-auto flex flex-col space-y-4' : 'flex space-x-8'}`}>
              <button 
                 onTouchStart={(e) => { e.preventDefault(); mobileInput.current = -1; }}
                 onTouchEnd={() => mobileInput.current = 0}
-                className="w-28 h-28 bg-white/5 active:bg-blue-500/40 border-2 border-white/10 rounded-full flex items-center justify-center text-4xl backdrop-blur-md transition-all active:scale-90"
+                onMouseDown={() => mobileInput.current = -1}
+                onMouseUp={() => mobileInput.current = 0}
+                className="w-20 h-20 md:w-28 md:h-28 bg-white/5 active:bg-blue-500/40 border-2 border-white/10 rounded-full flex items-center justify-center text-3xl md:text-4xl backdrop-blur-md transition-all active:scale-90 select-none"
              >
                 ▲
              </button>
              <button 
                 onTouchStart={(e) => { e.preventDefault(); mobileInput.current = 1; }}
                 onTouchEnd={() => mobileInput.current = 0}
-                className="w-28 h-28 bg-white/5 active:bg-blue-500/40 border-2 border-white/10 rounded-full flex items-center justify-center text-4xl backdrop-blur-md transition-all active:scale-90"
+                onMouseDown={() => mobileInput.current = 1}
+                onMouseUp={() => mobileInput.current = 0}
+                className="w-20 h-20 md:w-28 md:h-28 bg-white/5 active:bg-blue-500/40 border-2 border-white/10 rounded-full flex items-center justify-center text-3xl md:text-4xl backdrop-blur-md transition-all active:scale-90 select-none"
              >
                 ▼
              </button>
-          </div>
-          <div className="w-32 h-full opacity-10 pointer-events-none">
-             {/* Индикаторы или декор */}
           </div>
         </div>
       )}
