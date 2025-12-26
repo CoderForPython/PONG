@@ -1,10 +1,10 @@
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Multiplayer PONG Arcade</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>PONG Arcade Multiplayer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
@@ -14,12 +14,18 @@
             overflow: hidden;
             background-color: #050505;
             color: #fff;
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-family: 'Inter', -apple-system, system-ui, sans-serif;
             touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
         canvas {
             display: block;
-            image-rendering: pixelated;
+            image-rendering: auto;
+        }
+        @keyframes pulse-blue {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
         }
     </style>
     <script type="importmap">

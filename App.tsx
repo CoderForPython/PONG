@@ -8,14 +8,19 @@ import { GameState, GameSide } from './types';
 
 declare const Peer: any;
 
-// Конфигурация для пробития NAT (необходимо для мобильных сетей)
+// Расширенная конфигурация для обхода NAT и файрволов
 const PEER_CONFIG = {
+  debug: 2, // Поможет увидеть детали в консоли разработчика
   config: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
-    ]
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      { urls: 'stun:stun.services.mozilla.com' }
+    ],
+    iceCandidatePoolSize: 10
   }
 };
 
@@ -39,10 +44,10 @@ const App: React.FC = () => {
   }, []);
 
   const setupConnection = useCallback((connection: any, hostStatus: boolean) => {
-    console.log("Initializing data connection...");
+    console.log("Setting up data channel...");
 
     const onOpen = () => {
-      console.log("P2P Data Channel Opened!");
+      console.log("Connection successfully established!");
       setConn(connection);
       setError(null);
       if (hostStatus) {
@@ -50,9 +55,7 @@ const App: React.FC = () => {
       }
     };
 
-    // Сначала вешаем слушатели, потом проверяем состояние
     connection.on('data', (data: any) => {
-      console.log("Network Message:", data.type);
       if (data.type === 'SIDE_SELECTED') {
         setHostSide(data.side);
         setGameState('COUNTDOWN');
@@ -65,8 +68,13 @@ const App: React.FC = () => {
     });
 
     connection.on('error', (err: any) => {
-      console.error("Connection Data Error:", err);
-      setError("Ошибка передачи данных: " + (err.type || "unknown"));
+      console.error("Connection error:", err);
+      // Обработка специфической ошибки согласования
+      if (err.type === 'negotiation-failed') {
+        setError("Сбой согласования WebRTC. Попробуйте сменить сеть (Wi-Fi/4G)");
+      } else {
+        setError("Ошибка данных: " + (err.type || "unknown"));
+      }
     });
 
     if (connection.open) {
@@ -77,23 +85,21 @@ const App: React.FC = () => {
   }, []);
 
   const createLobby = useCallback(() => {
+    setError(null);
     const id = Math.random().toString(36).substring(2, 7).toUpperCase();
     const newPeer = new Peer(id, PEER_CONFIG);
 
     newPeer.on('open', (id: string) => {
-      console.log("Host Peer Ready:", id);
       setLobbyId(id);
       setIsHost(true);
       setPeer(newPeer);
     });
 
     newPeer.on('connection', (connection: any) => {
-      console.log("Remote peer attempting to connect...");
       setupConnection(connection, true);
     });
 
     newPeer.on('error', (err: any) => {
-      console.error("Host Node Error:", err);
       if (err.type === 'unavailable-id') {
         createLobby();
       } else {
@@ -107,13 +113,13 @@ const App: React.FC = () => {
     if (!targetId) return;
 
     setError(null);
-    console.log("Joining lobby:", targetId);
     const newPeer = new Peer(PEER_CONFIG);
     
-    newPeer.on('open', (myId: string) => {
-      console.log("Client Peer Ready, connecting to host...");
+    newPeer.on('open', () => {
+      // Используем дополнительные опции для повышения стабильности на мобильных устройствах
       const connection = newPeer.connect(targetId, {
-        reliable: true
+        reliable: true,
+        serialization: 'json' // Принудительный JSON часто работает лучше в нестабильных сетях
       });
       setIsHost(false);
       setPeer(newPeer);
@@ -121,11 +127,10 @@ const App: React.FC = () => {
     });
 
     newPeer.on('error', (err: any) => {
-      console.error("Client Node Error:", err);
       if (err.type === 'peer-unavailable') {
-        setError("Лобби не найдено");
+        setError("Лобби " + targetId + " не найдено");
       } else {
-        setError("Ошибка подключения: " + err.type);
+        setError("Ошибка инициализации: " + err.type);
       }
     });
   }, [setupConnection]);
@@ -136,7 +141,7 @@ const App: React.FC = () => {
       conn.send({ type: 'SIDE_SELECTED', side: side });
       setGameState('COUNTDOWN');
     } else {
-      setError("Соединение не готово");
+      setError("Соединение потеряно, обновите страницу");
     }
   };
 
@@ -149,9 +154,9 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center overflow-hidden font-sans selection:bg-blue-500/30">
       {error && (
-        <div className="fixed top-6 bg-red-600/95 text-white px-6 py-4 rounded-2xl z-50 shadow-2xl backdrop-blur-md animate-in slide-in-from-top duration-300 flex items-center space-x-4">
-          <span className="font-bold">⚠️ {error}</span>
-          <button onClick={() => setError(null)} className="bg-white/20 hover:bg-white/40 w-8 h-8 rounded-full flex items-center justify-center transition-colors">×</button>
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-red-600/95 text-white px-6 py-4 rounded-2xl z-50 shadow-2xl backdrop-blur-md animate-in slide-in-from-top duration-300 flex items-center justify-between">
+          <span className="font-bold text-sm">⚠️ {error}</span>
+          <button onClick={() => setError(null)} className="ml-4 bg-white/20 hover:bg-white/40 w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0">×</button>
         </div>
       )}
 
@@ -168,17 +173,9 @@ const App: React.FC = () => {
       )}
 
       {gameState === 'SELECTING_SIDE' && !isHost && (
-        <div className="flex flex-col items-center space-y-8 p-16 bg-zinc-900 rounded-[3rem] border border-zinc-800 shadow-2xl">
-          <div className="relative">
-            <div className="w-24 h-24 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-12 h-12 bg-blue-500/20 rounded-full animate-pulse"></div>
-            </div>
-          </div>
-          <div className="text-center">
-            <p className="text-white text-3xl font-black italic tracking-tighter animate-pulse uppercase">Ожидание хоста</p>
-            <p className="text-zinc-500 text-sm mt-3 font-medium uppercase tracking-widest">Выбирается сторона игрового поля</p>
-          </div>
+        <div className="flex flex-col items-center space-y-8 p-12 bg-zinc-900 rounded-[3rem] border border-zinc-800 shadow-2xl mx-4">
+          <div className="w-20 h-20 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-white text-2xl font-black italic tracking-tighter animate-pulse uppercase text-center">Хост выбирает сторону...</p>
         </div>
       )}
 
@@ -194,10 +191,10 @@ const App: React.FC = () => {
 
       {gameState === 'FINISHED' && (
         <div className="flex flex-col items-center space-y-12 animate-in fade-in zoom-in duration-500">
-          <h1 className="text-9xl font-black text-white italic tracking-tighter drop-shadow-[0_0_30px_rgba(255,255,255,0.2)]">GAME OVER</h1>
+          <h1 className="text-8xl font-black text-white italic tracking-tighter drop-shadow-[0_0_30px_rgba(255,255,255,0.2)]">МАТЧ ОКОНЧЕН</h1>
           <button 
             onClick={() => window.location.reload()}
-            className="px-20 py-8 bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 text-white font-black text-2xl rounded-3xl transition-all shadow-2xl transform hover:scale-105 active:scale-95 uppercase tracking-widest"
+            className="px-16 py-6 bg-blue-600 hover:bg-blue-500 text-white font-black text-xl rounded-2xl transition-all shadow-2xl transform hover:scale-105 active:scale-95 uppercase"
           >
             В главное меню
           </button>
