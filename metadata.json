@@ -1,0 +1,5 @@
+{
+  "name": "Multiplayer PONG Arcade",
+  "description": "A high-performance real-time multiplayer Pong game with lobby systems, side selection, and cross-platform controls for PC and Mobile.",
+  "requestFramePermissions": []
+}
